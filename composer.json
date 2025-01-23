@@ -31,9 +31,10 @@
         "php": "^7.2|^8.0",
         "ext-xml": "*",
         "johnstevenson/json-works": "~1.1",
-        "firebase/php-jwt": "^5.0",
+        "firebase/php-jwt": "^6.0",
         "guzzlehttp/guzzle": "~6.0|~7.0",
-      "ext-json": "*"
+      "ext-json": "*",
+        "vonage/jwt": "^0.5.1"
     },
     "require-dev": {
         "phpunit/phpunit": "^7.4|^8.0",
@@ -54,6 +55,11 @@
         "psr-4": {
             "OpenTok\\": "src/OpenTok",
             "OpenTokTest\\": "tests/OpenTokTest"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
         }
     }
 }

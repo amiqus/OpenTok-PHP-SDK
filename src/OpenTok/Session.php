@@ -32,16 +32,25 @@ class Session
      * @internal
      */
     protected $opentok;
+    /**
+     * @internal
+     */
+    protected $e2ee;
 
     /**
      * @internal
      */
     public function __construct($opentok, $sessionId, $properties = array())
     {
-        // unpack arguments
-        $defaults = array('mediaMode' => MediaMode::ROUTED, 'archiveMode' => ArchiveMode::MANUAL, 'location' => null);
+        $defaults = [
+            'mediaMode' => MediaMode::ROUTED,
+            'archiveMode' => ArchiveMode::MANUAL,
+            'location' => null,
+            'e2ee' => false
+        ];
+
         $properties = array_merge($defaults, array_intersect_key($properties, $defaults));
-        list($mediaMode, $archiveMode, $location) = array_values($properties);
+        list($mediaMode, $archiveMode, $location, $e2ee) = array_values($properties);
 
         Validators::validateOpenTok($opentok);
         Validators::validateSessionId($sessionId);
@@ -54,6 +63,7 @@ class Session
         $this->location = $location;
         $this->mediaMode = $mediaMode;
         $this->archiveMode = $archiveMode;
+        $this->e2ee = $e2ee;
     }
 
     /**
@@ -120,7 +130,7 @@ class Session
      * the client passes a token when connecting to the session.
      * <p>
      * For testing, you can also generate tokens or by logging in to your
-     * <a href="https://tokbox.com/account">TokBox account</a>.
+     * <a href="https://tokbox.com/account">OpenTok Video API account</a>.
      *
      * @param array $options This array defines options for the token. This array include the
      * following keys, all of which are optional:
@@ -144,8 +154,19 @@ class Session
      *
      * @return string The token string.
      */
-    public function generateToken($options = array())
+    public function generateToken($options = array(), bool $legacy = false)
     {
-        return $this->opentok->generateToken($this->sessionId, $options);
+        return $this->opentok->generateToken($this->sessionId, $options, $legacy);
+    }
+
+    /**
+     * Whether <a href="https://tokbox.com/developer/guides/end-to-end-encryption">end-to-end encryption</a>
+     * is set for the session.
+     *
+     * @return bool
+     */
+    public function getE2EE(): bool
+    {
+        return (bool)$this->e2ee;
     }
 }

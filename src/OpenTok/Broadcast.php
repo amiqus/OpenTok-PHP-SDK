@@ -35,6 +35,30 @@ use OpenTok\Util\Validators;
 * @property boolean $isStopped
 * Whether the broadcast is stopped (true) or in progress (false).
 *
+* @property string $multiBroadcastTag
+* Whether Multiple Broadcast is switched on, which will be a unique string for each simultaneous broadcast of an ongoing session.
+* See https://tokbox.com/developer/guides/archiving/#simultaneous-archives for more information.
+*
+* @property boolean $isHls
+* Whether the broadcast supports HLS.
+*
+* @property boolean $isDvr
+* Whether the broadcast supports DVR functionality for the HLS stream.
+
+* @property string $status
+* Broadcast state. Either `started` or `stopped`
+*
+* @property string $maxBitRate
+* Max Bitrate allowed for the broadcast composing. Must be between 400000 and 2000000
+*
+* @property boolean $isLowLatency
+* Whether the broadcast supports low-latency mode for the HLS stream.
+*
+* @property string $resolution
+* The resolution of the archive, either "640x480" (SD landscape, the default), "1280x720" (HD landscape),
+* "1920x1080" (FHD landscape), "480x640" (SD portrait), "720x1280" (HD portrait), or "1080x1920" (FHD portrait).
+* You may want to use a portrait aspect ratio for archives that include video streams from mobile devices (which often use the portrait aspect ratio).
+*
 * @property string $streamMode
 * Whether streams included in the broadcast are selected automatically (<code>StreamMode.AUTO</code>)
 * or manually (<code>StreamMode.MANUAL</code>). When streams are selected automatically (<code>StreamMode.AUTO</code>),
@@ -48,46 +72,86 @@ use OpenTok\Util\Validators;
 */
 class Broadcast
 {
-    // NOTE: after PHP 5.3.0 support is dropped, the class can implement JsonSerializable
-
     /** @ignore */
     private $data;
     /** @ignore */
-    private $isStopped = false;
+    private $isStopped;
     /** @ignore */
     private $client;
-
     /** @ignore */
+    private $isHls;
+    /** @ignore */
+    private $isLowLatency;
+    /** @ignore */
+    private $isDvr;
+    /** @ignore */
+    private $multiBroadcastTag;
+    /** @ignore */
+    private $resolution;
+    /** @ignore */
+    private $hasAudio;
+    /** @ignore */
+    private $hasVideo;
+    /** @ignore */
+    private $status;
+    /** @ignore */
+    private $maxBitRate;
+
     public function __construct($broadcastData, $options = array())
     {
         // unpack optional arguments (merging with default values) into named variables
+        // when adding these properties like this, it's worth noting that the method that
+        // starts a broadcast ALSO sets a load of defaults
         $defaults = array(
             'apiKey' => null,
             'apiSecret' => null,
             'apiUrl' => 'https://api.opentok.com',
             'client' => null,
             'isStopped' => false,
-            'streamMode' => StreamMode::AUTO
+            'streamMode' => StreamMode::AUTO,
+            'isHls' => true,
+            'isLowLatency' => false,
+            'isDvr' => false,
+            'hasAudio' => true,
+            'hasVideo' => true
         );
-        $options = array_merge($defaults, array_intersect_key($options, $defaults));
-        list($apiKey, $apiSecret, $apiUrl, $client, $isStopped, $streamMode) = array_values($options);
 
-        // validate params
+        $options = array_merge($defaults, array_intersect_key($options, $defaults));
+
         Validators::validateBroadcastData($broadcastData);
-        Validators::validateClient($client);
-        Validators::validateHasStreamMode($streamMode);
+        Validators::validateClient($options['client']);
+        Validators::validateHasStreamMode($options['streamMode']);
 
         $this->data = $broadcastData;
 
-        $this->isStopped = $isStopped;
+        if (isset($this->data['multiBroadcastTag'])) {
+            $this->multiBroadcastTag = $this->data['multiBroadcastTag'];
+        }
 
-        $this->client = isset($client) ? $client : new Client();
+        if (isset($this->data['maxBitRate'])) {
+            $this->maxBitRate = $this->data['maxBitRate'];
+        }
+
+        if (isset($this->data['status'])) {
+            $this->status = $this->data['status'];
+        }
+
+        $this->isStopped = $options['isStopped'];
+        $this->resolution = $this->data['resolution'];
+        $this->isHls = isset($this->data['settings']['hls']);
+        $this->isLowLatency = $this->data['settings']['hls']['lowLatency'] ?? false;
+        $this->isDvr = $this->data['settings']['hls']['dvr'] ?? false;
+        $this->hasAudio = $options['hasAudio'];
+        $this->hasVideo = $options['hasVideo'];
+
+        $this->client = $options['client'] ?? new Client();
+
         if (!$this->client->isConfigured()) {
-            Validators::validateApiKey($apiKey);
-            Validators::validateApiSecret($apiSecret);
-            Validators::validateApiUrl($apiUrl);
+            Validators::validateApiKey($options['apiKey']);
+            Validators::validateApiSecret($options['apiSecret']);
+            Validators::validateApiUrl($options['apiUrl']);
 
-            $this->client->configure($apiKey, $apiSecret, $apiUrl);
+            $this->client->configure($options['apiKey'], $options['apiSecret'], $options['apiUrl']);
         }
     }
 
@@ -101,19 +165,36 @@ class Broadcast
             case 'partnerId':
             case 'sessionId':
             case 'broadcastUrls':
-            case 'status':
             case 'maxDuration':
-            case 'resolution':
             case 'streamMode':
                 return $this->data[$name];
+            case 'resolution':
+                return $this->resolution;
             case 'hlsUrl':
                 return $this->data['broadcastUrls']['hls'];
             case 'isStopped':
                 return $this->isStopped;
+            case 'isHls':
+                return $this->isHls;
+            case 'isLowLatency':
+                return $this->isLowLatency;
+            case 'isDvr':
+                return $this->isDvr;
+            case 'multiBroadcastTag':
+                return $this->multiBroadcastTag;
+            case 'hasAudio':
+                return $this->hasAudio;
+            case 'hasVideo':
+                return $this->hasVideo;
+            case 'status':
+                return $this->status;
+            case 'maxBitRate':
+                return $this->maxBitRate;
             default:
                 return null;
         }
     }
+
     /**
      * Stops the broadcast.
      */

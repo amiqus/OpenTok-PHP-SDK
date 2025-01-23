@@ -2,14 +2,10 @@
 
 namespace OpenTokTest;
 
-use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
-use GuzzleHttp\Middleware;
 use OpenTok\OpenTok;
 use OpenTok\Session;
 use OpenTok\MediaMode;
 use OpenTok\ArchiveMode;
-use OpenTok\Util\Client;
 use PHPUnit\Framework\TestCase;
 
 class SessionTest extends TestCase
@@ -122,6 +118,20 @@ class SessionTest extends TestCase
         );
     }
 
+    public function testInitialzationWithoutE2ee()
+    {
+        $sessionId = 'SESSIONID';
+        $session = new Session($this->opentok, $sessionId);
+        $this->assertEquals(false, $session->getE2EE());
+    }
+
+    public function testInitialzationWithE2ee()
+    {
+        $sessionId = 'SESSIONID';
+        $session = new Session($this->opentok, $sessionId, ['e2ee' => true]);
+        $this->assertEquals(true, $session->getE2EE());
+    }
+
     public function testInitializationWithExtraneousParams()
     {
         $sessionId = 'SESSIONID';
@@ -146,7 +156,7 @@ class SessionTest extends TestCase
         $opentok = new OpenTok($bogusApiKey, $bogusApiSecret);
         $session = new Session($opentok, $sessionId);
 
-        $token = $session->generateToken();
+        $token = $session->generateToken([], true);
 
         $this->assertIsString($token);
         $decodedToken = TestHelpers::decodeToken($token);

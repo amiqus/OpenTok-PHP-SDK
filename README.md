@@ -1,5 +1,16 @@
 # OpenTok PHP SDK
 
+>## Notice
+>
+> This library is designed to work with the Tokbox/OpenTok platform, part of the Vonage Video API. If you are looking to use the Vonage Video API and using the Vonage Customer Dashboard, you will want to install the
+> [Vonage Server SDK for PHP]((https://github.com/Vonage/vonage-php-sdk-video)), which includes support for the Vonage Video API.
+>
+> Not sure which exact platform you are using? Take a look at [this guide](https://api.support.vonage.com/hc/en-us/articles/10817774782492).
+>
+> If you are using the Tokbox platform, do not worry! The Tokbox platform is not going away, and this library will continue to be updated. While we encourage customers to check out the new Unified platform, there is no rush to  > switch. Both platforms run the exact same infrastructure and capabilities, with the main difference is a unified billing interface and easier access to [Vonage’s other CPaaS APIs](https://www.vonage.com/communications-apis/).
+>
+> If you are new to the Vonage Video API, head on over to the [Vonage Customer Dashboard](https://dashboard.vonage.com) to sign up for a developer account and check out the [Vonage Server SDK for <language>](link to core SDK). 
+
 [![Build Status](https://travis-ci.org/opentok/OpenTok-PHP-SDK.svg)](https://travis-ci.org/opentok/OpenTok-PHP-SDK) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v2.0%20adopted-ff69b4.svg)](CODE_OF_CONDUCT.md)
 
 <img src="https://assets.tokbox.com/img/vonage/Vonage_VideoAPI_black.svg" height="48px" alt="Tokbox is now known as Vonage" />
@@ -13,9 +24,10 @@ The OpenTok PHP SDK provides methods for:
 * Working with [OpenTok archives](https://tokbox.com/opentok/tutorials/archiving)
 * Working with [OpenTok live streaming broadcasts](https://tokbox.com/developer/guides/broadcast/live-streaming/)
 * Working with [OpenTok SIP interconnect](https://tokbox.com/developer/guides/sip)
-* [Sending signals to clients connected to a session](https://www.tokbox.com/developer/guides/signaling/)
+* [Sending signals to clients connected to a session](https://tokbox.com/developer/guides/signaling/)
 * [Disconnecting clients from sessions](https://tokbox.com/developer/guides/moderation/rest/)
 * [Forcing clients in a session to disconnect or mute published audio](https://tokbox.com/developer/guides/moderation/)
+* Working with OpenTok [Audio Connector](https://tokbox.com/developer/guides/audio-connector)
 
 ## Installation
 
@@ -278,19 +290,36 @@ You can only start live streaming broadcasts for sessions that use the OpenTok M
 Start the live streaming broadcast of an OpenTok Session using the
 `startBroadcast($sessionId, $options)` method of the `OpenTok\OpenTok` class.
 This will return an `OpenTok\Broadcast` instance. The `$options` parameter is
-an optional array used to assign broadcast options such as layout, maxDuration, resolution, and more.
+an array used to define the broadcast streams, assign broadcast options such as layout,
+maxDuration, resolution, and more.
 
 ```php
+// Define options for the broadcast
+$options = [
+  'layout' => Layout::getBestFit(),
+  'maxDuration' => 5400,
+  'resolution' => '1280x720',
+  'output' => [
+    'hls' => [
+      'dvr' => true,
+      'lowLatency' => false
+    ],
+    'rtmp' => [
+      [
+        'id' => 'foo',
+        'serverUrl' => 'rtmps://myfooserver/myfooapp',
+        'streamName' => 'myfoostream'
+      ],
+      [
+        'id' => 'bar',
+        'serverUrl' => 'rtmps://myfooserver/mybarapp',
+        'streamName' => 'mybarstream'
+      ],
+    ]
+  ]
+];
+
 // Start a live streaming broadcast of a session
-$broadcast = $opentok->startBroadcast($sessionId);
-
-
-// Start a live streaming broadcast of a session, using broadcast options
-$options = array(
-    'layout' => Layout::getBestFit(),
-    'maxDuration' => 5400,
-    'resolution' => '1280x720'
-);
 $broadcast = $opentok->startBroadcast($sessionId, $options);
 
 // Store the broadcast ID in the database for later use
@@ -457,6 +486,12 @@ $opentok->dial($sessionId, $token, $sipUri, $options);
 For more information, see the [OpenTok SIP Interconnect developer
 guide](https://tokbox.com/developer/guides/sip/).
 
+### Working with Audio Connector
+
+You can start an [Audio Connector](https://tokbox.com/developer/guides/audio-connector) WebSocket
+by calling the `connectAudio()` method of the
+`OpenTok\OpenTok` class.
+
 ## Samples
 
 There are three sample applications included in this repository. To get going as fast as possible, clone the whole
@@ -474,7 +509,7 @@ Reference documentation is available at
 ## Requirements
 
 You need an OpenTok API key and API secret, which you can obtain by logging into your
-[TokBox account](https://tokbox.com/account).
+[Vonage Video API account](https://tokbox.com/account).
 
 The OpenTok PHP SDK requires PHP 7.2 or higher.
 

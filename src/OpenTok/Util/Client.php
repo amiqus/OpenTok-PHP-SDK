@@ -2,7 +2,9 @@
 
 namespace OpenTok\Util;
 
+use Composer\InstalledVersions;
 use Exception as GlobalException;
+use GuzzleHttp\Utils;
 use OpenTok\Layout;
 use Firebase\JWT\JWT;
 use OpenTok\MediaMode;
@@ -18,7 +20,6 @@ use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\ServerException;
 use OpenTok\Exception\BroadcastException;
 use GuzzleHttp\Exception\RequestException;
-use function GuzzleHttp\default_user_agent;
 use OpenTok\Exception\ArchiveDomainException;
 use OpenTok\Exception\AuthenticationException;
 use OpenTok\Exception\BroadcastDomainException;
@@ -36,17 +37,13 @@ use OpenTok\Exception\ForceDisconnectConnectionException;
 use OpenTok\Exception\ForceDisconnectAuthenticationException;
 use OpenTok\Exception\ForceDisconnectUnexpectedValueException;
 
-// TODO: build this dynamically
-/** @internal */
-define('OPENTOK_SDK_VERSION', '4.10.0');
-/** @internal */
-define('OPENTOK_SDK_USER_AGENT', 'OpenTok-PHP-SDK/' . OPENTOK_SDK_VERSION);
-
 /**
-* @internal
-*/
+ * @internal
+ */
 class Client
 {
+    public const OPENTOK_SDK_USER_AGENT_IDENTIFIER = 'OpenTok-PHP-SDK/';
+
     protected $apiKey;
     protected $apiSecret;
     protected $configured = false;
@@ -56,18 +53,24 @@ class Client
      */
     protected $client;
 
+    /**
+     * @var array|mixed
+     */
+    public $options;
+
     public function configure($apiKey, $apiSecret, $apiUrl, $options = array())
     {
+        $this->options = $options;
         $this->apiKey = $apiKey;
         $this->apiSecret = $apiSecret;
 
-        if (isset($options['client'])) {
+        if (isset($this->options['client'])) {
             $this->client = $options['client'];
         } else {
             $clientOptions = [
                 'base_uri' => $apiUrl,
                 'headers' => [
-                    'User-Agent' => OPENTOK_SDK_USER_AGENT . ' ' . default_user_agent(),
+                    'User-Agent' => $this->buildUserAgentString()
                 ],
             ];
 
@@ -94,6 +97,26 @@ class Client
         $this->configured = true;
     }
 
+    private function buildUserAgentString(): string
+    {
+        $userAgent = [];
+
+        $userAgent[] = self::OPENTOK_SDK_USER_AGENT_IDENTIFIER
+                       . InstalledVersions::getVersion('opentok/opentok');
+
+        $userAgent[] = 'php/' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+
+        if (isset($this->options['app'])) {
+            $app = $this->options['app'];
+            if (isset($app['name'], $app['version'])) {
+                // You must use both of these for custom agent strings
+                $userAgent[] = $app['name'] . '/' . $app['version'];
+            }
+        }
+
+        return implode(' ', $userAgent);
+    }
+
     public function isConfigured()
     {
         return $this->configured;
@@ -106,9 +129,9 @@ class Client
             'iss' => $this->apiKey,
             'iat' => time(), // this is in seconds
             'exp' => time() + (5 * 60),
-            'jti' => uniqid(),
+            'jti' => uniqid('', true),
         );
-        return JWT::encode($token, $this->apiSecret);
+        return JWT::encode($token, $this->apiSecret, 'HS256');
     }
 
     // General API Requests
@@ -159,6 +182,60 @@ class Client
             throw new \RuntimeException('Unable to parse response body into XML: ' . $errorMessage);
         }
         return $xml;
+    }
+
+    public function startRender($payload)
+    {
+        $request = new Request('POST', '/v2/project/' . $this->apiKey . '/render');
+
+        try {
+            $response = $this->client->send($request, $payload);
+            $renderJson = $response->getBody()->getContents();
+        } catch (\Exception $e) {
+            $this->handleRenderException($e);
+        }
+
+        return $renderJson;
+    }
+
+    public  function stopRender($renderId): bool
+    {
+        $request = new Request('DELETE', '/v2/project/' . $this->apiKey . '/render/' . $renderId);
+
+        try {
+            $response = $this->client->send($request);
+            return $response->getStatusCode() === 200;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    public function getRender($renderId): string
+    {
+        $request = new Request('POST', '/v2/project/' . $this->apiKey . '/render/' . $renderId);
+
+        try {
+            $response = $this->client->send($request);
+            $renderJson = $response->getBody()->getContents();
+        } catch (\Exception $e) {
+            $this->handleRenderException($e);
+        }
+
+        return $renderJson;
+    }
+
+    public function listRenders($query)
+    {
+        $request = new Request('GET', '/v2/project/' . $this->apiKey . '/render?' . http_build_query($query));
+
+        try {
+            $response = $this->client->send($request);
+            $renderJson = $response->getBody()->getContents();
+        } catch (\Exception $e) {
+            $this->handleRenderException($e);
+        }
+
+        return json_decode($renderJson, true);
     }
 
     public function startArchive(string $sessionId, array $options = []): array
@@ -613,7 +690,7 @@ class Client
      * @param string $sessionId
      * @param string $token
      * @param string $sipUri
-     * @param array{secure: bool, headers?: array<string, string>, auth?: array{username: string, password: string}, from?: string, video?: boolean} $options
+     * @param array{secure: bool, headers?: array<string, string>, auth?: array{username: string, password: string}, from?: string, video?: boolean, streams?: array} $options
      * @return array{id: string, streamId: string, connectId: string}
      * @throws AuthenticationException
      * @throws DomainException
@@ -628,7 +705,8 @@ class Client
             'token' => $token,
             'sip' => array(
                 'uri' => $sipUri,
-                'secure' => $options['secure']
+                'secure' => $options['secure'],
+                'observeForceMute' => $options['observeForceMute']
             )
         );
 
@@ -646,6 +724,10 @@ class Client
 
         if (array_key_exists('video', $options)) {
             $body['sip']['video'] = (bool) $options['video'];
+        }
+
+        if (array_key_exists('streams', $options)) {
+            $body['sip']['streams'] = $options['streams'];
         }
 
         // set up the request
@@ -780,11 +862,97 @@ class Client
         return $jsonResponse;
     }
 
-    //echo 'Uh oh! ' . $e->getMessage();
-    //echo 'HTTP request URL: ' . $e->getRequest()->getUrl() . "\n";
-    //echo 'HTTP request: ' . $e->getRequest() . "\n";
-    //echo 'HTTP response status: ' . $e->getResponse()->getStatusCode() . "\n";
-    //echo 'HTTP response: ' . $e->getResponse() . "\n";
+    public function connectAudio(string $sessionId, string $token, array $websocketOptions)
+    {
+        $request = new Request(
+            'POST',
+            '/v2/project/' . $this->apiKey . '/connect'
+        );
+
+        $body = [
+            'sessionId' => $sessionId,
+            'token' => $token,
+            'websocket' => $websocketOptions
+        ];
+
+        try {
+            $response = $this->client->send($request, [
+                'debug' => $this->isDebug(),
+                'json' => $body
+            ]);
+            $jsonResponse = json_decode($response->getBody(), true);
+        } catch (\Exception $e) {
+            $this->handleException($e);
+            return false;
+        }
+
+        return $jsonResponse;
+    }
+
+    public function startCaptions(
+        string $sessionId,
+        string $token,
+        ?string $languageCode,
+        ?int $maxDuration,
+        ?bool $partialCaptions,
+        ?string $statusCallbackUrl
+    )
+    {
+        $request = new Request(
+            'POST',
+            '/v2/project/' . $this->apiKey . '/captions'
+        );
+
+        $body = [
+            'sessionId' => $sessionId,
+            'token' => $token,
+        ];
+
+        if ($languageCode !== null) {
+            $body['languageCode'] = $languageCode;
+        }
+
+        if ($maxDuration !== null) {
+            $body['maxDuration'] = $maxDuration;
+        }
+
+        if ($partialCaptions !== null) {
+            $body['partialCaptions'] = $partialCaptions;
+        }
+
+        if ($statusCallbackUrl !== null) {
+            $body['statusCallbackUrl'] = $statusCallbackUrl;
+        }
+
+        try {
+            $response = $this->client->send($request, [
+                'debug' => $this->isDebug(),
+                'json' => $body
+            ]);
+            $jsonResponse = json_decode($response->getBody(), true);
+        } catch (\Exception $e) {
+            $this->handleException($e);
+        }
+
+        return $jsonResponse;
+    }
+
+    public function stopCaptions(string $captionsId)
+    {
+        $request = new Request(
+            'POST',
+            '/v2/project/' . $this->apiKey . '/captions/' . $captionsId . '/stop'
+        );
+
+        try {
+            $this->client->send($request, [
+                'debug' => $this->isDebug(),
+            ]);
+            return true;
+        } catch (\Exception $e) {
+            $this->handleException($e);
+        }
+    }
 
     private function handleException($e)
     {
@@ -864,14 +1032,14 @@ class Client
                 throw new SignalConnectionException($message, $responseCode);
             case 413:
                 $message = 'The type string exceeds the maximum length (128 bytes),'
-                    . ' or the data string exceeds the maximum size (8 kB).';
+                           . ' or the data string exceeds the maximum size (8 kB).';
                 throw new SignalUnexpectedValueException($message, $responseCode);
             default:
                 break;
         }
     }
 
-    private function handleForceDisconnectException($e)
+    private function handleForceDisconnectException($e): void
     {
         $responseCode = $e->getResponse()->getStatusCode();
         switch ($responseCode) {
@@ -883,6 +1051,21 @@ class Client
             case 404:
                 $message = 'The client specified by the connectionId property is not connected to the session.';
                 throw new ForceDisconnectConnectionException($message, $responseCode);
+            default:
+                break;
+        }
+    }
+
+    private function handleRenderException($e): void
+    {
+        $responseCode = $e->getResponse()->getStatusCode();
+        switch ($responseCode) {
+            case 400:
+                throw new InvalidArgumentException('There was an error with the parameters supplied.');
+            case 403:
+                throw new AuthenticationException($this->apiKey, $this->apiSecret, null, $e);
+            case 500:
+                throw new \Exception('There is an error with the Video Platform');
             default:
                 break;
         }
